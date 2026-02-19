@@ -9,6 +9,7 @@ from __future__ import annotations
 from src.core.database import SignalRow, get_session
 from src.core.logging import get_logger
 from src.core.models import Bar, IndicatorSnapshot, RiskDecision, RiskResult
+from src.indicators.regime import RegimeDetector
 from src.risk.manager import RiskManager
 from src.signals.scorer import score_confluence
 from src.strategies.base import BaseStrategy
@@ -27,10 +28,12 @@ class SignalGenerator:
         strategies: list[BaseStrategy],
         risk_manager: RiskManager,
         sqlite_engine=None,
+        regime_detector: RegimeDetector | None = None,
     ) -> None:
         self.strategies = strategies
         self.risk_manager = risk_manager
         self.sqlite_engine = sqlite_engine
+        self.regime_detector = regime_detector
 
     def on_bar(
         self, bar: Bar, snapshot: IndicatorSnapshot | None
@@ -53,9 +56,21 @@ class SignalGenerator:
             confluence = score_confluence(signal, snapshot)
             signal.confidence = (signal.confidence + confluence) / 2
 
+            # Regime scaling: reduce confidence in non-ranging markets
+            if self.regime_detector is not None:
+                scaling = self.regime_detector.state.signal_scaling
+                if scaling <= 0.0:
+                    continue  # Skip signal entirely in trending regime
+                signal.confidence *= scaling
+
             # Risk gate
             atr = snapshot.atr_14 or 3.0
-            risk_result = self.risk_manager.evaluate(signal, atr=atr)
+            risk_result = self.risk_manager.evaluate(
+                signal,
+                atr=atr,
+                current_time=bar.timestamp,
+                trading_window=strategy.config.trading_window,
+            )
 
             # Persist signal
             self._persist_signal(signal, risk_result)

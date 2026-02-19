@@ -182,14 +182,14 @@ class TestValidateStopDistance:
 
 class TestCalculateRiskDollars:
     def test_basic(self):
-        # 8 ticks * $1.25 * 1 contract + $0.62 round-trip = $10.62
-        risk = calculate_risk_dollars(8, 1, 1.25, 0.31)
-        assert abs(risk - 10.62) < 0.01
+        # 8 ticks * $1.25 * 1 contract + $1.24 round-trip = $11.24
+        risk = calculate_risk_dollars(8, 1, 1.25, 0.62)
+        assert abs(risk - 11.24) < 0.01
 
     def test_multiple_contracts(self):
-        risk = calculate_risk_dollars(8, 2, 1.25, 0.31)
-        # 8 * 1.25 * 2 + 0.31*2*2 = 20 + 1.24 = 21.24
-        assert abs(risk - 21.24) < 0.01
+        risk = calculate_risk_dollars(8, 2, 1.25, 0.62)
+        # 8 * 1.25 * 2 + 0.62*2*2 = 20 + 2.48 = 22.48
+        assert abs(risk - 22.48) < 0.01
 
     def test_zero_quantity(self):
         assert calculate_risk_dollars(8, 0) == 0.0

@@ -120,7 +120,7 @@ class TestRiskManagerRejections:
         assert "exceeds" in result.reason.lower() or "ATR" in result.reason
 
     def test_reject_bad_risk_reward(self, manager, trading_time):
-        # 16 tick stop, 8 tick target = 0.5 R:R (below minimum 2.0)
+        # 16 tick stop, 8 tick target = 0.5 R:R (below minimum 0.8)
         signal = _make_signal(target=5002)
         result = manager.evaluate(signal, atr=3.0, current_time=trading_time)
         assert result.decision == RiskDecision.REJECTED

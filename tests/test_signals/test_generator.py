@@ -100,7 +100,7 @@ class TestSignalGenerator:
             confidence=0.7,
             entry_price=5000.0,
             stop_loss=4996.0,
-            take_profit=5001.0,  # R:R < 2.0
+            take_profit=5001.0,  # R:R = 0.25 < 0.8 minimum
         )
         strategy = StubStrategy(signal=signal)
         risk_mgr = RiskManager(account_equity=10000.0)

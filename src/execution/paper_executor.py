@@ -21,8 +21,8 @@ class PaperExecutor:
 
     def __init__(
         self,
-        slippage_ticks_mean: float = 0.5,
-        slippage_ticks_std: float = 0.25,
+        slippage_ticks_mean: float = 1.5,
+        slippage_ticks_std: float = 0.5,
         fill_probability: float = 1.0,
         tick_size: float = MES_SPEC["tick_size"],
         commission: float = MES_SPEC["commission_per_side"] * 2,

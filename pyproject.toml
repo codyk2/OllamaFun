@@ -49,6 +49,10 @@ dev = [
     "ruff>=0.4",
 ]
 
+optimize = [
+    "optuna>=3.6",
+]
+
 finetune = [
     "unsloth>=2024.6",
     "transformers>=4.41",

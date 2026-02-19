@@ -7,6 +7,8 @@ concurrent positions, trading hours, and cooldown timer.
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 from datetime import datetime, time
 
 import pytz
@@ -40,6 +42,7 @@ class RiskManager:
         daily_tracker: DailyLimitsTracker | None = None,
         risk_config: dict | None = None,
         contract_spec: dict | None = None,
+        news_calendar: object | None = None,
     ) -> None:
         self.account_equity = account_equity
         self.config = {**RISK_DEFAULTS, **(risk_config or {})}
@@ -51,6 +54,7 @@ class RiskManager:
             max_daily_trades=self.config["max_daily_trades"],
             cooldown_seconds=self.config["cooldown_after_loss"],
         )
+        self.news_calendar = news_calendar
         self.open_positions: int = 0
         self.events: list[RiskEvent] = []
 
@@ -59,21 +63,35 @@ class RiskManager:
         signal: Signal,
         atr: float,
         current_time: datetime | None = None,
+        trading_window: object | None = None,
     ) -> RiskResult:
         """Evaluate a trading signal against all risk rules.
 
         Returns RiskResult with APPROVED (and position size) or REJECTED (with reason).
+        trading_window: optional TradingWindow from strategy config.
         """
         # 1. Check if trading is halted (daily/weekly limits)
         can_trade, reason = self.daily_tracker.can_trade()
         if not can_trade:
             return self._reject(signal, reason, "DAILY_LIMIT_CHECK")
 
-        # 2. Check trading hours
+        # 2. Check trading hours (CME market hours)
         now = current_time or datetime.now(CT)
         hours_ok, hours_reason = self._check_trading_hours(now)
         if not hours_ok:
             return self._reject(signal, hours_reason, "TRADING_HOURS_CHECK")
+
+        # 2b. Check strategy-specific active trading window (ET-based)
+        if trading_window is not None:
+            window_ok, window_reason = self._check_trading_window(now, trading_window)
+            if not window_ok:
+                return self._reject(signal, window_reason, "TRADING_WINDOW_CHECK")
+
+        # 2c. Check news calendar blackout
+        if self.news_calendar is not None:
+            blocked, news_reason = self.news_calendar.is_blocked(now)
+            if blocked:
+                return self._reject(signal, news_reason, "NEWS_BLACKOUT_CHECK")
 
         # 3. Check concurrent positions
         if self.open_positions >= self.config["max_concurrent_positions"]:
@@ -206,6 +224,31 @@ class RiskManager:
         close_buffer = time(15, 60 - skip_last)
         if weekday == 4 and current_time >= close_buffer:
             return False, f"Skipping last {skip_last} minutes before close"
+
+        return True, ""
+
+    def _check_trading_window(
+        self, now: datetime, trading_window: object
+    ) -> tuple[bool, str]:
+        """Check if current time is within the strategy's active trading window.
+
+        Window times are in ET (Eastern Time).
+        """
+        ET = pytz.timezone("America/New_York")
+        if now.tzinfo is None:
+            now_et = ET.localize(now)
+        else:
+            now_et = now.astimezone(ET)
+
+        current_time_et = now_et.time()
+        start = trading_window.start_et
+        end = trading_window.end_et
+
+        if current_time_et < start or current_time_et >= end:
+            return False, (
+                f"Outside active trading window "
+                f"({start.strftime('%I:%M %p')}-{end.strftime('%I:%M %p')} ET)"
+            )
 
         return True, ""
 

@@ -82,6 +82,8 @@ class Signal(BaseModel):
     entry_price: float
     stop_loss: float
     take_profit: float | None = None
+    take_profit_primary: float | None = None
+    take_profit_secondary: float | None = None
     reason: str = ""
     market_context: IndicatorSnapshot | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -114,7 +116,7 @@ class Trade(BaseModel):
     pnl_ticks: float | None = None
     pnl_dollars: float | None = None
     risk_reward_actual: float | None = None
-    commission: float = 0.62
+    commission: float = 1.24
     slippage_ticks: float = 0.0
     signal_confidence: float | None = None
     ai_review: str | None = None
@@ -152,6 +154,8 @@ class Position(BaseModel):
     unrealized_pnl: float = 0.0
     trailing_stop: float | None = None
     trailing_activated: bool = False
+    scale_out_done: bool = False
+    original_quantity: int | None = None
 
     def update_price(self, price: float, tick_value: float = 1.25) -> None:
         """Update position with latest price."""

@@ -10,10 +10,12 @@ from src.config import MES_SPEC
 from src.core.logging import get_logger
 from src.core.models import (
     Bar,
+    Direction,
     Position,
     RiskDecision,
     RiskResult,
     Trade,
+    TradeStatus,
 )
 from src.execution.paper_executor import PaperExecutor
 from src.journal.recorder import TradeRecorder
@@ -73,6 +75,9 @@ class OrderManager:
                 stop = position.trailing_stop or position.trade.stop_loss
                 trade = self._close_position(position, stop, "stop_loss")
                 closed_trades.append(trade)
+            elif self._should_scale_out(position, bar):
+                self._execute_scale_out(position, bar)
+                remaining.append(position)
             elif position.should_take_profit():
                 trade = self._close_position(
                     position, position.trade.take_profit, "take_profit"
@@ -103,7 +108,11 @@ class OrderManager:
         if trade is None:
             return None
 
-        position = Position(trade=trade, current_price=trade.entry_price)
+        position = Position(
+            trade=trade,
+            current_price=trade.entry_price,
+            original_quantity=trade.quantity,
+        )
         self.open_positions.append(position)
         self.risk_manager.record_position_opened()
 
@@ -150,3 +159,76 @@ class OrderManager:
         if activated:
             position.trailing_stop = new_stop
             position.trailing_activated = True
+
+    def _should_scale_out(self, position: Position, bar: Bar) -> bool:
+        """Check if position should scale out at primary target.
+
+        Scale-out conditions:
+        - Signal had take_profit_primary set
+        - Position quantity > 1 (can't split a 1-lot)
+        - Scale-out hasn't been done yet
+        - Price has reached primary target
+        """
+        if position.scale_out_done:
+            return False
+        if position.trade.quantity <= 1:
+            return False
+
+        signal = getattr(position.trade, '_signal', None)
+        # Access primary target from the trade's original signal via the take_profit_primary
+        # We store it on the trade as a note when the signal has dual targets
+        primary = self._get_primary_target(position)
+        if primary is None:
+            return False
+
+        if position.trade.direction == Direction.LONG:
+            return bar.close >= primary
+        return bar.close <= primary
+
+    def _get_primary_target(self, position: Position) -> float | None:
+        """Get the primary take-profit target from the trade's notes or take_profit field.
+
+        When scale-out is available, take_profit is the primary and
+        take_profit on the trade may be updated to the secondary after scale-out.
+        """
+        # For scale-out, the trade's take_profit starts as the primary target.
+        # If the position hasn't scaled out yet, take_profit IS the primary.
+        if not position.scale_out_done and position.trade.quantity > 1:
+            return position.trade.take_profit
+        return None
+
+    def _execute_scale_out(self, position: Position, bar: Bar) -> None:
+        """Close half the position at primary target, move stop to breakeven."""
+        primary = position.trade.take_profit
+        if primary is None:
+            return
+
+        scale_qty = position.trade.quantity // 2
+        if scale_qty <= 0:
+            return
+
+        # Reduce position quantity
+        position.trade.quantity -= scale_qty
+        position.scale_out_done = True
+
+        # Move stop to breakeven (entry price)
+        position.trailing_stop = position.trade.entry_price
+        position.trailing_activated = True
+
+        # Record partial P&L
+        if position.trade.direction == Direction.LONG:
+            pnl_ticks = (primary - position.trade.entry_price) / 0.25
+        else:
+            pnl_ticks = (position.trade.entry_price - primary) / 0.25
+        pnl_dollars = pnl_ticks * 1.25 * scale_qty
+
+        self.risk_manager.daily_tracker.record_trade_closed(pnl_dollars)
+
+        logger.info(
+            "scale_out",
+            direction=position.trade.direction.value,
+            qty_closed=scale_qty,
+            qty_remaining=position.trade.quantity,
+            price=primary,
+            pnl=pnl_dollars,
+        )

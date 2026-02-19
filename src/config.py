@@ -55,7 +55,7 @@ MES_SPEC = {
     "exchange": "CME",
     "tick_size": 0.25,
     "tick_value": 1.25,
-    "commission_per_side": 0.31,  # ~$0.62 round-trip
+    "commission_per_side": 0.62,  # ~$1.24 round-trip (includes exchange/NFA fees)
     "currency": "USD",
 }
 
@@ -65,7 +65,7 @@ RISK_DEFAULTS = {
     "daily_loss_limit": 0.03,
     "weekly_loss_limit": 0.06,
     "max_daily_trades": 10,
-    "min_risk_reward_ratio": 2.0,
+    "min_risk_reward_ratio": 0.8,
     "max_concurrent_positions": 2,
     "always_use_stop_loss": True,
     "max_stop_distance_atr": 2.0,

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from src.core.models import Bar, Direction, IndicatorSnapshot, Signal
 from src.risk.stop_loss import calculate_initial_stop, calculate_take_profit
-from src.strategies.base import BaseStrategy, StrategyConfig
+from src.strategies.base import BaseStrategy, StrategyConfig, TradingWindow
 
 DEFAULT_PARAMS = {
     "bb_touch_threshold": 0.0,
@@ -19,8 +19,8 @@ DEFAULT_PARAMS = {
     "rsi_overbought": 65.0,
     "rsi_extreme_oversold": 25.0,
     "rsi_extreme_overbought": 75.0,
-    "atr_stop_multiple": 1.5,
-    "risk_reward_target": 2.0,
+    "atr_stop_multiple": 2.0,
+    "risk_reward_target": 1.2,
     "require_keltner_filter": True,
     "require_vwap_alignment": False,
     "min_atr": 0.5,
@@ -32,7 +32,11 @@ class MeanReversionStrategy(BaseStrategy):
 
     def __init__(self, config: StrategyConfig | None = None) -> None:
         if config is None:
-            config = StrategyConfig(name="mean_reversion", params=DEFAULT_PARAMS.copy())
+            config = StrategyConfig(
+                name="mean_reversion",
+                params=DEFAULT_PARAMS.copy(),
+                trading_window=TradingWindow(),
+            )
         else:
             merged = {**DEFAULT_PARAMS, **config.params}
             config.params = merged
@@ -72,6 +76,11 @@ class MeanReversionStrategy(BaseStrategy):
             risk_reward_ratio=self.params["risk_reward_target"],
         )
 
+        # Dynamic targets: BB middle (primary), VWAP (secondary)
+        primary, secondary = self._calculate_dynamic_targets(
+            bar, snapshot, direction, stop_price
+        )
+
         reason = self._build_reason(bar, snapshot, direction)
 
         return Signal(
@@ -81,10 +90,55 @@ class MeanReversionStrategy(BaseStrategy):
             confidence=confidence,
             entry_price=bar.close,
             stop_loss=stop_price,
-            take_profit=take_profit,
+            take_profit=primary or take_profit,
+            take_profit_primary=primary,
+            take_profit_secondary=secondary,
             reason=reason,
             market_context=snapshot,
         )
+
+    def _calculate_dynamic_targets(
+        self,
+        bar: Bar,
+        snap: IndicatorSnapshot,
+        direction: Direction,
+        stop_price: float,
+    ) -> tuple[float | None, float | None]:
+        """Calculate dynamic take-profit targets.
+
+        Primary: BB middle (the mean we're reverting to)
+        Secondary: VWAP (extended target for remainder)
+        Fallback: None (uses fixed R:R from calculate_take_profit)
+
+        Minimum target distance: 4 ticks ($5.00) to cover friction.
+        """
+        min_distance = 4 * 0.25  # 4 ticks = 1 point
+
+        primary = None
+        secondary = None
+
+        # Primary target: BB middle
+        if snap.bb_middle is not None:
+            if direction == Direction.LONG and snap.bb_middle > bar.close + min_distance:
+                primary = snap.bb_middle
+            elif direction == Direction.SHORT and snap.bb_middle < bar.close - min_distance:
+                primary = snap.bb_middle
+
+        # Secondary target: VWAP
+        if snap.vwap is not None:
+            if direction == Direction.LONG and snap.vwap > bar.close + min_distance:
+                secondary = snap.vwap
+            elif direction == Direction.SHORT and snap.vwap < bar.close - min_distance:
+                secondary = snap.vwap
+
+        # Ensure primary is closer than secondary for LONG
+        if primary is not None and secondary is not None:
+            if direction == Direction.LONG and secondary < primary:
+                primary, secondary = secondary, primary
+            elif direction == Direction.SHORT and secondary > primary:
+                primary, secondary = secondary, primary
+
+        return primary, secondary
 
     def _check_entry_conditions(
         self, bar: Bar, snap: IndicatorSnapshot

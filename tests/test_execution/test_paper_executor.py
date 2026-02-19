@@ -114,7 +114,7 @@ class TestExecuteEntry:
         executor = PaperExecutor(paper_mode=True, slippage_ticks_mean=0, slippage_ticks_std=0)
         result = _make_risk_result(qty=2)
         trade = executor.execute_entry(result)
-        assert trade.commission == pytest.approx(0.62 * 2)
+        assert trade.commission == pytest.approx(1.24 * 2)
 
     def test_slippage_ticks_recorded(self):
         executor = PaperExecutor(paper_mode=True, slippage_ticks_mean=2, slippage_ticks_std=0)

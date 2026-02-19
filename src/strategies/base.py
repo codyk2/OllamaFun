@@ -4,9 +4,21 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import time
 
 from src.core.logging import get_logger
 from src.core.models import Bar, IndicatorSnapshot, Signal
+
+
+@dataclass
+class TradingWindow:
+    """Time window restricting when a strategy may enter trades.
+
+    Times are in ET (Eastern Time). Signals outside this window are blocked.
+    """
+
+    start_et: time = field(default_factory=lambda: time(10, 0))  # 10:00 AM ET
+    end_et: time = field(default_factory=lambda: time(14, 0))    # 2:00 PM ET
 
 
 @dataclass
@@ -17,6 +29,7 @@ class StrategyConfig:
     enabled: bool = True
     min_confidence: float = 0.5
     params: dict = field(default_factory=dict)
+    trading_window: TradingWindow | None = None
 
 
 class BaseStrategy(ABC):

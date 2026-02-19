@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+wheels/
+*.egg
+
+# Virtual environment
+.venv/
+
+# Database
+db/*.db
+db/*.db-wal
+db/*.db-shm
+db/*.duckdb
+
+# Data
+data/historical/
+data/exports/
+data/models/*.gguf
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+
+# Coverage
+.coverage
+htmlcov/
+
+# Hypothesis
+.hypothesis/
+
+# Claude Code
+.claude/
+
+# Windows artifacts
+nul

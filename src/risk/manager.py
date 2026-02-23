@@ -7,8 +7,6 @@ concurrent positions, trading hours, and cooldown timer.
 
 from __future__ import annotations
 
-from __future__ import annotations
-
 from datetime import datetime, time
 
 import pytz
@@ -22,6 +20,7 @@ from src.core.models import (
     Severity,
     Signal,
 )
+from src.risk.apex_drawdown import ApexDrawdownTracker
 from src.risk.daily_limits import DailyLimitsTracker
 from src.risk.position_sizer import calculate_position_size, validate_stop_distance
 from src.risk.stop_loss import (
@@ -43,6 +42,8 @@ class RiskManager:
         risk_config: dict | None = None,
         contract_spec: dict | None = None,
         news_calendar: object | None = None,
+        apex_drawdown: ApexDrawdownTracker | None = None,
+        max_contracts: int | None = None,
     ) -> None:
         self.account_equity = account_equity
         self.config = {**RISK_DEFAULTS, **(risk_config or {})}
@@ -55,6 +56,8 @@ class RiskManager:
             cooldown_seconds=self.config["cooldown_after_loss"],
         )
         self.news_calendar = news_calendar
+        self.apex_drawdown = apex_drawdown
+        self.max_contracts = max_contracts
         self.open_positions: int = 0
         self.events: list[RiskEvent] = []
 
@@ -74,6 +77,12 @@ class RiskManager:
         can_trade, reason = self.daily_tracker.can_trade()
         if not can_trade:
             return self._reject(signal, reason, "DAILY_LIMIT_CHECK")
+
+        # Apex trailing drawdown check
+        if self.apex_drawdown is not None:
+            can_trade, dd_reason = self.apex_drawdown.can_trade()
+            if not can_trade:
+                return self._reject(signal, dd_reason, "APEX_DRAWDOWN_CHECK")
 
         # 2. Check trading hours (CME market hours)
         now = current_time or datetime.now(CT)
@@ -164,6 +173,18 @@ class RiskManager:
                 "POSITION_SIZE_CHECK",
             )
 
+        # Clamp to Apex max contract limit
+        if self.max_contracts is not None:
+            total_after = self.open_positions + position_size
+            if total_after > self.max_contracts:
+                position_size = self.max_contracts - self.open_positions
+                if position_size <= 0:
+                    return self._reject(
+                        signal,
+                        "Max contracts reached for account",
+                        "MAX_CONTRACTS_CHECK",
+                    )
+
         # All checks passed
         return RiskResult(
             decision=RiskDecision.APPROVED,
@@ -208,6 +229,10 @@ class RiskManager:
         # Friday after 4PM
         if weekday == 4 and current_time >= time(16, 0):
             return False, "Market closed (Friday after 4PM CT)"
+
+        # Apex: block new entries 5 min before daily maintenance
+        if time(15, 55) <= current_time < time(16, 0) and weekday in range(5):
+            return False, "Approaching daily maintenance (3:55-4:00 PM CT)"
 
         # Daily maintenance break: 4:00 PM - 5:00 PM CT (Mon-Thu)
         if time(16, 0) <= current_time < time(17, 0) and weekday in (0, 1, 2, 3):

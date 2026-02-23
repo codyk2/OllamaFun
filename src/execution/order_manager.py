@@ -1,7 +1,7 @@
 """Order and position lifecycle management.
 
 Tracks open positions, monitors stop-loss and take-profit levels,
-handles trailing stops, and coordinates with PaperExecutor for fills.
+handles trailing stops, and coordinates with executor for fills.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from src.core.models import (
     Trade,
     TradeStatus,
 )
-from src.execution.paper_executor import PaperExecutor
+from src.execution.base_executor import BaseExecutor
 from src.journal.recorder import TradeRecorder
 from src.risk.manager import RiskManager
 from src.risk.stop_loss import update_trailing_stop
@@ -30,15 +30,17 @@ class OrderManager:
 
     def __init__(
         self,
-        executor: PaperExecutor,
+        executor: BaseExecutor,
         risk_manager: RiskManager,
         recorder: TradeRecorder | None = None,
         atr_for_trailing: float = 3.0,
+        account_id: str = "default",
     ) -> None:
         self.executor = executor
         self.risk_manager = risk_manager
         self.recorder = recorder
         self.atr_for_trailing = atr_for_trailing
+        self.account_id = account_id
         self.open_positions: list[Position] = []
 
     def process_signals(self, risk_results: list[RiskResult]) -> list[Trade]:
@@ -118,6 +120,7 @@ class OrderManager:
 
         logger.info(
             "position_opened",
+            account=self.account_id,
             direction=trade.direction.value,
             entry=trade.entry_price,
             qty=trade.quantity,
@@ -138,6 +141,7 @@ class OrderManager:
 
         logger.info(
             "position_closed",
+            account=self.account_id,
             direction=trade.direction.value,
             pnl=trade.pnl_dollars,
             reason=reason,
@@ -226,6 +230,7 @@ class OrderManager:
 
         logger.info(
             "scale_out",
+            account=self.account_id,
             direction=position.trade.direction.value,
             qty_closed=scale_qty,
             qty_remaining=position.trade.quantity,

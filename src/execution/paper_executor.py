@@ -12,15 +12,17 @@ from datetime import UTC, datetime
 from src.config import MES_SPEC, settings
 from src.core.logging import get_logger
 from src.core.models import Direction, Position, RiskResult, Trade, TradeStatus
+from src.execution.base_executor import BaseExecutor
 
 logger = get_logger("paper_executor")
 
 
-class PaperExecutor:
+class PaperExecutor(BaseExecutor):
     """Simulates trade execution for paper trading mode."""
 
     def __init__(
         self,
+        account_id: str = "paper",
         slippage_ticks_mean: float = 1.5,
         slippage_ticks_std: float = 0.5,
         fill_probability: float = 1.0,
@@ -31,6 +33,7 @@ class PaperExecutor:
         is_paper = paper_mode if paper_mode is not None else settings.trading.paper_mode
         if not is_paper:
             raise RuntimeError("PaperExecutor requires paper_mode=True")
+        self.account_id = account_id
         self.slippage_mean = slippage_ticks_mean
         self.slippage_std = slippage_ticks_std
         self.fill_probability = fill_probability
@@ -56,6 +59,7 @@ class PaperExecutor:
         )
 
         trade = Trade(
+            account_id=self.account_id,
             strategy=signal.strategy,
             symbol=signal.symbol,
             direction=signal.direction,
@@ -72,6 +76,7 @@ class PaperExecutor:
 
         logger.info(
             "paper_entry",
+            account=self.account_id,
             direction=signal.direction.value,
             entry=fill_price,
             stop=signal.stop_loss,
@@ -99,6 +104,7 @@ class PaperExecutor:
 
         logger.info(
             "paper_exit",
+            account=self.account_id,
             direction=trade.direction.value,
             exit=fill_price,
             pnl=trade.pnl_dollars,

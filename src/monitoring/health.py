@@ -1,6 +1,6 @@
 """Health check and system monitoring.
 
-Periodically checks IB connection, database writes, and Ollama availability.
+Periodically checks broker connection, database writes, and Ollama availability.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ class ServiceStatus(str, Enum):
 class HealthStatus:
     """Current health of all services."""
 
-    ib_status: ServiceStatus = ServiceStatus.UNKNOWN
-    ib_last_heartbeat: datetime | None = None
+    broker_status: ServiceStatus = ServiceStatus.UNKNOWN
+    broker_last_heartbeat: datetime | None = None
     duckdb_status: ServiceStatus = ServiceStatus.UNKNOWN
     sqlite_status: ServiceStatus = ServiceStatus.UNKNOWN
     ollama_status: ServiceStatus = ServiceStatus.UNKNOWN
@@ -38,7 +38,7 @@ class HealthStatus:
     @property
     def overall_status(self) -> ServiceStatus:
         """Overall system health."""
-        statuses = [self.ib_status, self.duckdb_status, self.sqlite_status]
+        statuses = [self.broker_status, self.duckdb_status, self.sqlite_status]
         if any(s == ServiceStatus.DOWN for s in statuses):
             return ServiceStatus.DOWN
         if any(s == ServiceStatus.DEGRADED for s in statuses):
@@ -54,13 +54,13 @@ class HealthMonitor:
     def __init__(self) -> None:
         self._start_time = time.monotonic()
         self.status = HealthStatus()
-        self._ib_provider = None
+        self._broker_provider = None
         self._duckdb_conn = None
         self._sqlite_engine = None
 
-    def register_ib(self, provider) -> None:
-        """Register IB provider for health monitoring."""
-        self._ib_provider = provider
+    def register_broker(self, provider) -> None:
+        """Register broker provider for health monitoring."""
+        self._broker_provider = provider
 
     def register_duckdb(self, conn) -> None:
         """Register DuckDB connection."""
@@ -76,7 +76,7 @@ class HealthMonitor:
         self.status.last_check = datetime.now()
         self.status.errors.clear()
 
-        self._check_ib()
+        self._check_broker()
         self._check_duckdb()
         self._check_sqlite()
 
@@ -88,22 +88,22 @@ class HealthMonitor:
 
         return self.status
 
-    def _check_ib(self) -> None:
-        """Check IB connection health."""
-        if self._ib_provider is None:
-            self.status.ib_status = ServiceStatus.UNKNOWN
+    def _check_broker(self) -> None:
+        """Check broker connection health."""
+        if self._broker_provider is None:
+            self.status.broker_status = ServiceStatus.UNKNOWN
             return
 
         try:
-            if self._ib_provider.connected:
-                self.status.ib_status = ServiceStatus.UP
-                self.status.ib_last_heartbeat = datetime.now()
+            if self._broker_provider.connected:
+                self.status.broker_status = ServiceStatus.UP
+                self.status.broker_last_heartbeat = datetime.now()
             else:
-                self.status.ib_status = ServiceStatus.DOWN
-                self.status.errors.append("IB disconnected")
+                self.status.broker_status = ServiceStatus.DOWN
+                self.status.errors.append("Broker disconnected")
         except Exception as e:
-            self.status.ib_status = ServiceStatus.DOWN
-            self.status.errors.append(f"IB check failed: {e}")
+            self.status.broker_status = ServiceStatus.DOWN
+            self.status.errors.append(f"Broker check failed: {e}")
 
     def _check_duckdb(self) -> None:
         """Check DuckDB is responsive."""

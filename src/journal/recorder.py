@@ -44,13 +44,14 @@ class TradeRecorder:
             session.commit()
             trade_id = row.id
             session.close()
-            logger.info("trade_recorded", trade_id=trade_id, pnl=trade.pnl_dollars)
+            logger.info("trade_recorded", trade_id=trade_id, account=trade.account_id,
+                        pnl=trade.pnl_dollars)
             return trade_id
         except Exception as e:
             logger.error("trade_record_failed", error=str(e))
             return None
 
-    def record_risk_event(self, event: RiskEvent) -> None:
+    def record_risk_event(self, event: RiskEvent, account_id: str | None = None) -> None:
         """Persist a risk event."""
         if self.sqlite_engine is None:
             return
@@ -58,6 +59,7 @@ class TradeRecorder:
         try:
             session = get_session(self.sqlite_engine)
             row = RiskEventRow(
+                account_id=account_id,
                 event_type=event.event_type,
                 details=event.details,
                 severity=event.severity.value,
@@ -77,6 +79,7 @@ class TradeRecorder:
         try:
             session = get_session(self.sqlite_engine)
             row = EquitySnapshotRow(
+                account_id=snapshot.account_id,
                 equity=snapshot.equity,
                 unrealized_pnl=snapshot.unrealized_pnl,
                 realized_pnl_today=snapshot.realized_pnl_today,
@@ -88,12 +91,14 @@ class TradeRecorder:
         except Exception as e:
             logger.error("equity_snapshot_failed", error=str(e))
 
-    def generate_daily_summary(self, date: str | None = None) -> DailySummaryRow | None:
+    def generate_daily_summary(
+        self, date: str | None = None, account_id: str = "default"
+    ) -> DailySummaryRow | None:
         """Generate and persist a daily summary from today's trades."""
         if date is None:
             date = datetime.now(UTC).strftime("%Y-%m-%d")
 
-        trades = self._today_trades
+        trades = [t for t in self._today_trades if t.account_id == account_id]
         if not trades:
             return None
 
@@ -127,6 +132,7 @@ class TradeRecorder:
 
         row = DailySummaryRow(
             date=date,
+            account_id=account_id,
             total_trades=len(closed),
             winners=len(winners),
             losers=len(losers),
@@ -150,21 +156,23 @@ class TradeRecorder:
 
         return row
 
-    def get_trades_for_date(self, date: str) -> list[Trade]:
+    def get_trades_for_date(self, date: str, account_id: str | None = None) -> list[Trade]:
         """Load all trades for a given date from SQLite."""
         if self.sqlite_engine is None:
-            return [
+            trades = [
                 t for t in self._today_trades
                 if t.entry_time and t.entry_time.strftime("%Y-%m-%d") == date
             ]
+            if account_id:
+                trades = [t for t in trades if t.account_id == account_id]
+            return trades
 
         try:
             session = get_session(self.sqlite_engine)
-            rows = (
-                session.query(TradeRow)
-                .filter(TradeRow.entry_time.like(f"{date}%"))
-                .all()
-            )
+            query = session.query(TradeRow).filter(TradeRow.entry_time.like(f"{date}%"))
+            if account_id:
+                query = query.filter(TradeRow.account_id == account_id)
+            rows = query.all()
             trades = [self._row_to_trade(r) for r in rows]
             session.close()
             return trades
@@ -178,6 +186,7 @@ class TradeRecorder:
 
     def _trade_to_row(self, trade: Trade) -> TradeRow:
         return TradeRow(
+            account_id=trade.account_id,
             strategy=trade.strategy,
             symbol=trade.symbol,
             direction=trade.direction.value,
@@ -202,6 +211,7 @@ class TradeRecorder:
     def _row_to_trade(self, row: TradeRow) -> Trade:
         return Trade(
             id=row.id,
+            account_id=row.account_id,
             strategy=row.strategy,
             symbol=row.symbol,
             direction=Direction(row.direction),

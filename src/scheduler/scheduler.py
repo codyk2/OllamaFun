@@ -23,16 +23,28 @@ logger = get_logger("scheduler")
 
 
 class TradingScheduler:
-    """Manages scheduled jobs for the trading system."""
+    """Manages scheduled jobs for the trading system.
+
+    Supports multi-account: accepts either a single DailyLimitsTracker
+    or a dict of {account_id: DailyLimitsTracker} for per-account resets.
+    """
 
     def __init__(
         self,
-        daily_tracker: DailyLimitsTracker,
-        health_monitor: HealthMonitor,
+        daily_tracker: DailyLimitsTracker | None = None,
+        daily_trackers: dict[str, DailyLimitsTracker] | None = None,
+        health_monitor: HealthMonitor | None = None,
         trade_recorder: TradeRecorder | None = None,
-        equity_getter: Callable[[], EquitySnapshot] | None = None,
+        equity_getter: Callable[[], list[EquitySnapshot]] | None = None,
     ) -> None:
-        self.daily_tracker = daily_tracker
+        # Support both single and multi-account tracker modes
+        if daily_trackers:
+            self.daily_trackers = daily_trackers
+        elif daily_tracker:
+            self.daily_trackers = {"default": daily_tracker}
+        else:
+            self.daily_trackers = {}
+
         self.health = health_monitor
         self.recorder = trade_recorder
         self.equity_getter = equity_getter
@@ -61,12 +73,13 @@ class TradingScheduler:
         )
 
         # Health check every 60 seconds
-        self.scheduler.add_job(
-            self._health_check_job,
-            "interval",
-            seconds=60,
-            id="health_check",
-        )
+        if self.health:
+            self.scheduler.add_job(
+                self._health_check_job,
+                "interval",
+                seconds=60,
+                id="health_check",
+            )
 
         # Equity snapshot every 5 minutes
         if self.equity_getter:
@@ -78,7 +91,7 @@ class TradingScheduler:
             )
 
         self.scheduler.start()
-        logger.info("scheduler_started")
+        logger.info("scheduler_started", accounts=list(self.daily_trackers.keys()))
 
     def stop(self) -> None:
         """Shut down the scheduler."""
@@ -87,14 +100,17 @@ class TradingScheduler:
             logger.info("scheduler_stopped")
 
     def _daily_reset_job(self) -> None:
-        """Reset daily P&L tracking and generate daily summary."""
-        logger.info("daily_reset_running")
+        """Reset daily P&L tracking and generate daily summary for all accounts."""
+        logger.info("daily_reset_running", accounts=list(self.daily_trackers.keys()))
 
-        # Generate daily summary before reset
+        # Generate daily summaries before reset
         if self.recorder:
-            self.recorder.generate_daily_summary()
+            for account_id in self.daily_trackers:
+                self.recorder.generate_daily_summary(account_id=account_id)
 
-        self.daily_tracker.reset_daily()
+        # Reset all account trackers
+        for account_id, tracker in self.daily_trackers.items():
+            tracker.reset_daily()
 
         if self.recorder:
             self.recorder.reset_daily()
@@ -102,13 +118,16 @@ class TradingScheduler:
         logger.info("daily_reset_complete")
 
     def _weekly_reset_job(self) -> None:
-        """Reset weekly P&L tracking."""
+        """Reset weekly P&L tracking for all accounts."""
         logger.info("weekly_reset_running")
-        self.daily_tracker.reset_weekly()
+        for account_id, tracker in self.daily_trackers.items():
+            tracker.reset_weekly()
         logger.info("weekly_reset_complete")
 
     def _health_check_job(self) -> None:
         """Run periodic health check."""
+        if not self.health:
+            return
         status = self.health.check_all()
         if status.overall_status.value != "HEALTHY":
             logger.warning(
@@ -117,12 +136,13 @@ class TradingScheduler:
             )
 
     def _equity_snapshot_job(self) -> None:
-        """Take equity snapshot and persist."""
+        """Take equity snapshots and persist for all accounts."""
         if not self.equity_getter or not self.recorder:
             return
 
         try:
-            snapshot = self.equity_getter()
-            self.recorder.record_equity_snapshot(snapshot)
+            snapshots = self.equity_getter()
+            for snapshot in snapshots:
+                self.recorder.record_equity_snapshot(snapshot)
         except Exception as e:
             logger.error("equity_snapshot_failed", error=str(e))

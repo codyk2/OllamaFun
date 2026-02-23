@@ -1,6 +1,6 @@
 """Tests for SignalGenerator."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,9 +34,9 @@ class StubStrategy(BaseStrategy):
         return True
 
 
-def _make_bar(close=5000.0):
+def _make_bar(close=5000.0, timestamp=None):
     return Bar(
-        timestamp=datetime.now(UTC),
+        timestamp=timestamp or datetime.now(UTC),
         open=close - 1,
         high=close + 1,
         low=close - 2,
@@ -85,8 +85,11 @@ class TestSignalGenerator:
         strategy = StubStrategy(signal=signal)
         risk_mgr = RiskManager(account_equity=10000.0)
 
+        # Use a fixed timestamp known to be within trading hours
+        # Tuesday 10:00 AM CT = 16:00 UTC
+        safe_time = datetime(2025, 1, 7, 16, 0, 0, tzinfo=UTC)  # Tuesday
         gen = SignalGenerator(strategies=[strategy], risk_manager=risk_mgr)
-        results = gen.on_bar(_make_bar(), _make_snapshot())
+        results = gen.on_bar(_make_bar(timestamp=safe_time), _make_snapshot())
 
         assert len(results) == 1
         assert results[0].decision == RiskDecision.APPROVED

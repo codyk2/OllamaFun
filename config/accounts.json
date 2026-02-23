@@ -1,0 +1,15 @@
+[
+    {
+        "account_id": "apex-50k-1",
+        "name": "Apex 50K Eval #1",
+        "account_type": "EVAL",
+        "tradovate_account_id": null,
+        "equity": 50000.0,
+        "max_contracts": 10,
+        "trailing_drawdown": 2500.0,
+        "max_equity_high": 50000.0,
+        "profit_goal": 3000.0,
+        "profit_split": 1.0,
+        "enabled": true
+    }
+]

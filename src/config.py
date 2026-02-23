@@ -8,16 +8,40 @@ from pydantic_settings import BaseSettings
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
-class IBConfig(BaseSettings):
-    host: str = Field(default="127.0.0.1", alias="IB_HOST")
-    port: int = Field(default=7497, alias="IB_PORT")
-    client_id: int = Field(default=1, alias="IB_CLIENT_ID")
+class TradovateConfig(BaseSettings):
+    username: str = Field(default="", alias="TRADOVATE_USERNAME")
+    password: str = Field(default="", alias="TRADOVATE_PASSWORD")
+    app_id: str = Field(default="", alias="TRADOVATE_APP_ID")
+    app_version: str = Field(default="1.0.0", alias="TRADOVATE_APP_VERSION")
+    cid: str = Field(default="", alias="TRADOVATE_CID")
+    sec: str = Field(default="", alias="TRADOVATE_SEC")
+    env: str = Field(default="demo", alias="TRADOVATE_ENV")
+
+    @property
+    def base_url(self) -> str:
+        if self.env == "demo":
+            return "https://demo.tradovateapi.com/v1"
+        return "https://live.tradovateapi.com/v1"
+
+    @property
+    def md_ws_url(self) -> str:
+        if self.env == "demo":
+            return "wss://md-d.tradovateapi.com/v1/websocket"
+        return "wss://md.tradovateapi.com/v1/websocket"
+
+    @property
+    def order_ws_url(self) -> str:
+        if self.env == "demo":
+            return "wss://demo.tradovateapi.com/v1/websocket"
+        return "wss://live.tradovateapi.com/v1/websocket"
 
 
 class TradingConfig(BaseSettings):
     symbol: str = Field(default="MES", alias="TRADING_SYMBOL")
     paper_mode: bool = Field(default=True, alias="PAPER_MODE")
-    account_equity: float = Field(default=10000.0, alias="ACCOUNT_EQUITY")
+    account_config_path: str = Field(
+        default="config/accounts.json", alias="ACCOUNT_CONFIG_PATH"
+    )
 
 
 class OllamaConfig(BaseSettings):
@@ -55,7 +79,7 @@ MES_SPEC = {
     "exchange": "CME",
     "tick_size": 0.25,
     "tick_value": 1.25,
-    "commission_per_side": 0.62,  # ~$1.24 round-trip (includes exchange/NFA fees)
+    "commission_per_side": 0.52,  # ~$1.04 round-trip (Tradovate/Apex fees)
     "currency": "USD",
 }
 
@@ -80,7 +104,7 @@ class Settings:
     """Aggregated application settings."""
 
     def __init__(self) -> None:
-        self.ib = IBConfig()
+        self.tradovate = TradovateConfig()
         self.trading = TradingConfig()
         self.ollama = OllamaConfig()
         self.db = DatabaseConfig()

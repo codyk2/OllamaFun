@@ -38,6 +38,28 @@ class Severity(str, Enum):
     CRITICAL = "CRITICAL"
 
 
+class AccountType(str, Enum):
+    EVAL = "EVAL"
+    FUNDED = "FUNDED"
+    PAPER = "PAPER"
+
+
+class Account(BaseModel):
+    """A Tradovate/Apex trading account."""
+
+    account_id: str
+    name: str
+    account_type: AccountType = AccountType.EVAL
+    tradovate_account_id: int | None = None
+    equity: float = 50000.0
+    max_contracts: int = 10
+    trailing_drawdown: float = 2500.0
+    max_equity_high: float = 50000.0
+    profit_goal: float = 3000.0
+    profit_split: float = 1.0
+    enabled: bool = True
+
+
 class Bar(BaseModel):
     """OHLCV bar data."""
 
@@ -96,12 +118,14 @@ class RiskResult(BaseModel):
     position_size: int = 0
     reason: str = ""
     signal: Signal | None = None
+    account_id: str | None = None
 
 
 class Trade(BaseModel):
     """A trade from entry to exit."""
 
     id: int | None = None
+    account_id: str = "default"
     strategy: str
     symbol: str = "MES"
     direction: Direction
@@ -116,7 +140,7 @@ class Trade(BaseModel):
     pnl_ticks: float | None = None
     pnl_dollars: float | None = None
     risk_reward_actual: float | None = None
-    commission: float = 1.24
+    commission: float = 1.04
     slippage_ticks: float = 0.0
     signal_confidence: float | None = None
     ai_review: str | None = None
@@ -194,6 +218,7 @@ class RiskEvent(BaseModel):
 class EquitySnapshot(BaseModel):
     """Account equity at a point in time."""
 
+    account_id: str = "default"
     equity: float
     unrealized_pnl: float = 0.0
     realized_pnl_today: float = 0.0

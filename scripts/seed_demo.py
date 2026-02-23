@@ -1,6 +1,7 @@
 """Seed the database with demo data for dashboard testing.
 
-Generates sample bars, indicators, signals, and trades.
+Generates sample bars, indicators, signals, and trades
+across multiple prop firm accounts.
 
 Usage: python -m scripts.seed_demo
 """
@@ -10,14 +11,22 @@ from datetime import UTC, datetime, timedelta
 
 from src.core.database import get_duckdb_connection, get_sqlite_engine, init_duckdb, init_sqlite_db
 from src.core.logging import get_logger, setup_logging
-from src.core.models import Direction, Signal, Trade, TradeStatus
+from src.core.models import Direction, EquitySnapshot, Trade, TradeStatus
 from src.indicators.calculator import IndicatorCalculator
 from src.journal.recorder import TradeRecorder
 from src.market_data.historical import generate_sample_bars, store_bars_to_duckdb
-from src.signals.generator import SignalGenerator
-from src.strategies.mean_reversion import MeanReversionStrategy
 
 logger = get_logger("seed_demo")
+
+# Demo accounts matching real Apex Trader Funding Tradovate plans
+DEMO_ACCOUNTS = [
+    {"account_id": "apex-50k-1", "name": "Apex 50K Eval #1", "equity": 50000.0,
+     "trailing_drawdown": 2500.0, "profit_goal": 3000.0, "max_contracts": 10},
+    {"account_id": "apex-50k-2", "name": "Apex 50K Eval #2", "equity": 50000.0,
+     "trailing_drawdown": 2500.0, "profit_goal": 3000.0, "max_contracts": 10},
+    {"account_id": "apex-150k-1", "name": "Apex 150K Eval #1", "equity": 150000.0,
+     "trailing_drawdown": 5000.0, "profit_goal": 9000.0, "max_contracts": 17},
+]
 
 
 def main():
@@ -30,7 +39,7 @@ def main():
     conn = get_duckdb_connection()
     init_duckdb(conn)
 
-    # Generate and store sample bars
+    # Generate and store sample bars (shared across accounts — one data feed)
     bars = generate_sample_bars(count=500, start_price=5950.0, volatility=2.5)
     stored = store_bars_to_duckdb(conn, bars, timeframe="1m")
     print(f"Stored {stored} sample 1m bars")
@@ -62,52 +71,68 @@ def main():
 
     print(f"Stored {indicator_count} indicator snapshots")
 
-    # Seed sample trades
+    # Seed sample trades per account
     recorder = TradeRecorder(sqlite_engine=engine)
     random.seed(42)
     base_time = datetime(2024, 6, 15, 9, 30, tzinfo=UTC)
-    trade_count = 0
+    total_trades = 0
 
-    for i in range(15):
-        direction = random.choice([Direction.LONG, Direction.SHORT])
-        entry_price = 5950.0 + random.gauss(0, 10)
-        pnl = random.gauss(5, 25)  # Slightly positive expectancy
+    for acct in DEMO_ACCOUNTS:
+        account_id = acct["account_id"]
+        base_equity = acct["equity"]
+        running_pnl = 0.0
 
-        if direction == Direction.LONG:
-            stop_loss = entry_price - random.uniform(2, 6)
-            take_profit = entry_price + random.uniform(4, 12)
-            exit_price = entry_price + (pnl / 1.25) * 0.25
-        else:
-            stop_loss = entry_price + random.uniform(2, 6)
-            take_profit = entry_price - random.uniform(4, 12)
-            exit_price = entry_price - (pnl / 1.25) * 0.25
+        for i in range(15):
+            direction = random.choice([Direction.LONG, Direction.SHORT])
+            entry_price = 5950.0 + random.gauss(0, 10)
+            pnl = random.gauss(5, 25)  # Slightly positive expectancy
 
-        entry_time = base_time + timedelta(minutes=i * 30)
-        exit_time = entry_time + timedelta(minutes=random.randint(5, 25))
+            if direction == Direction.LONG:
+                stop_loss = entry_price - random.uniform(2, 6)
+                take_profit = entry_price + random.uniform(4, 12)
+                exit_price = entry_price + (pnl / 1.25) * 0.25
+            else:
+                stop_loss = entry_price + random.uniform(2, 6)
+                take_profit = entry_price - random.uniform(4, 12)
+                exit_price = entry_price - (pnl / 1.25) * 0.25
 
-        trade = Trade(
-            strategy="mean_reversion",
-            direction=direction,
-            entry_price=round(entry_price, 2),
-            exit_price=round(exit_price, 2),
-            stop_loss=round(stop_loss, 2),
-            take_profit=round(take_profit, 2),
-            quantity=1,
-            entry_time=entry_time,
-            exit_time=exit_time,
-            status=TradeStatus.CLOSED,
-            pnl_dollars=round(pnl, 2),
-            pnl_ticks=round(pnl / 1.25, 2),
-            signal_confidence=round(random.uniform(0.5, 0.9), 2),
-        )
-        trade.calculate_risk_reward()
-        recorder.record_trade(trade)
-        trade_count += 1
+            entry_time = base_time + timedelta(minutes=i * 30)
+            exit_time = entry_time + timedelta(minutes=random.randint(5, 25))
 
-    # Generate daily summary
-    recorder.generate_daily_summary("2024-06-15")
+            trade = Trade(
+                account_id=account_id,
+                strategy="mean_reversion",
+                direction=direction,
+                entry_price=round(entry_price, 2),
+                exit_price=round(exit_price, 2),
+                stop_loss=round(stop_loss, 2),
+                take_profit=round(take_profit, 2),
+                quantity=1,
+                entry_time=entry_time,
+                exit_time=exit_time,
+                status=TradeStatus.CLOSED,
+                pnl_dollars=round(pnl, 2),
+                pnl_ticks=round(pnl / 1.25, 2),
+                signal_confidence=round(random.uniform(0.5, 0.9), 2),
+            )
+            trade.calculate_risk_reward()
+            recorder.record_trade(trade)
+            total_trades += 1
+            running_pnl += pnl
 
-    print(f"Stored {trade_count} sample trades")
+        # Record equity snapshot for this account
+        recorder.record_equity_snapshot(EquitySnapshot(
+            account_id=account_id,
+            equity=base_equity + running_pnl,
+            unrealized_pnl=0.0,
+            realized_pnl_today=running_pnl,
+        ))
+
+        # Generate daily summary per account
+        recorder.generate_daily_summary("2024-06-15", account_id=account_id)
+        print(f"  {account_id}: 15 trades, P&L: ${running_pnl:.2f}")
+
+    print(f"Stored {total_trades} sample trades across {len(DEMO_ACCOUNTS)} accounts")
 
     # Verify
     row_count = conn.execute("SELECT COUNT(*) FROM bars_1m").fetchone()[0]

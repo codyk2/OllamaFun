@@ -92,7 +92,7 @@ class TestEquitySnapshotJob:
     def test_equity_snapshot_recorded(self, daily_tracker, health_monitor):
         snapshot = EquitySnapshot(equity=10050.0, unrealized_pnl=50.0)
         recorder = MagicMock(spec=TradeRecorder)
-        getter = MagicMock(return_value=snapshot)
+        getter = MagicMock(return_value=[snapshot])
 
         scheduler = TradingScheduler(
             daily_tracker=daily_tracker,

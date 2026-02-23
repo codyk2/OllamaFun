@@ -21,6 +21,7 @@ class DailyLimitsTracker:
     weekly_loss_limit_pct: float = RISK_DEFAULTS["weekly_loss_limit"]
     max_daily_trades: int = RISK_DEFAULTS["max_daily_trades"]
     cooldown_seconds: int = RISK_DEFAULTS["cooldown_after_loss"]
+    account_id: str = "default"
 
     # Internal state
     realized_pnl_today: float = 0.0

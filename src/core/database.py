@@ -27,13 +27,31 @@ class Base(DeclarativeBase):
     pass
 
 
-# ── SQLite ORM Models ──────────────────────────────────────────────
+# -- SQLite ORM Models --
+
+
+class AccountRow(Base):
+    __tablename__ = "accounts"
+
+    account_id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    account_type = Column(String, nullable=False, default="EVAL")
+    tradovate_account_id = Column(Integer, nullable=True)
+    equity = Column(Float, nullable=False, default=50000.0)
+    max_contracts = Column(Integer, nullable=False, default=10)
+    trailing_drawdown = Column(Float, nullable=False, default=2500.0)
+    max_equity_high = Column(Float, nullable=False, default=50000.0)
+    profit_goal = Column(Float, nullable=False, default=3000.0)
+    profit_split = Column(Float, nullable=False, default=1.0)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class TradeRow(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String, nullable=False, default="default")
     strategy = Column(String, nullable=False)
     symbol = Column(String, nullable=False, default="MES")
     direction = Column(String, nullable=False)
@@ -48,7 +66,7 @@ class TradeRow(Base):
     pnl_ticks = Column(Float)
     pnl_dollars = Column(Float)
     risk_reward_actual = Column(Float)
-    commission = Column(Float, default=0.62)
+    commission = Column(Float, default=0.52)
     slippage_ticks = Column(Float, default=0)
     signal_confidence = Column(Float)
     ai_review = Column(Text)
@@ -60,6 +78,7 @@ class SignalRow(Base):
     __tablename__ = "signals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String, nullable=True)
     strategy = Column(String, nullable=False)
     symbol = Column(String, nullable=False, default="MES")
     direction = Column(String, nullable=False)
@@ -78,7 +97,9 @@ class SignalRow(Base):
 class DailySummaryRow(Base):
     __tablename__ = "daily_summary"
 
-    date = Column(String, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String, nullable=False)
+    account_id = Column(String, nullable=False, default="default")
     total_trades = Column(Integer, default=0)
     winners = Column(Integer, default=0)
     losers = Column(Integer, default=0)
@@ -100,6 +121,7 @@ class RiskEventRow(Base):
     __tablename__ = "risk_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String, nullable=True)
     event_type = Column(String, nullable=False)
     details = Column(JSON, nullable=False)
     severity = Column(String, nullable=False)
@@ -119,13 +141,25 @@ class EquitySnapshotRow(Base):
     __tablename__ = "equity_snapshots"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String, nullable=False, default="default")
     equity = Column(Float, nullable=False)
     unrealized_pnl = Column(Float, default=0)
     realized_pnl_today = Column(Float, default=0)
     snapshot_time = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
-# ── SQLite Engine Setup ────────────────────────────────────────────
+class DrawdownTrackRow(Base):
+    __tablename__ = "drawdown_tracking"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String, nullable=False)
+    equity = Column(Float, nullable=False)
+    max_equity_high = Column(Float, nullable=False)
+    drawdown_remaining = Column(Float, nullable=False)
+    snapshot_time = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+# -- SQLite Engine Setup --
 
 
 def _set_wal_mode(dbapi_conn, connection_record):
@@ -162,7 +196,7 @@ def get_session(engine=None) -> Session:
     return factory()
 
 
-# ── DuckDB Setup ───────────────────────────────────────────────────
+# -- DuckDB Setup --
 
 
 def get_duckdb_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
